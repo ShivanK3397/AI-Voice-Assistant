@@ -1,0 +1,29 @@
+name: Browser tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  browser:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v1
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.14"
+      - name: Install Python dependencies
+        run: uv sync
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+      - name: Run deterministic and browser integration tests
+        run: uv run pytest -q
+      - name: Lint and formatting
+        run: |
+          uv run ruff check
+          uv run ruff format --check
