@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.core-test.json",
+  "include": ["src/shared.ts", "src/protocol.ts", "src/preferences.ts", "src/renderer/state.ts", "src/backend.ts", "tests/*.test.ts"]
+}

@@ -83,6 +83,59 @@ class FakeBrowser:
         pass
 
 
+async def test_search_recovers_destination_locator_and_submits_without_review():
+    class SearchBrowser(FakeBrowser):
+        async def request(self, operation, **payload):
+            if operation == "act":
+                self.executions.append(payload["command"])
+                return {"status": "executed"}
+            if operation == "prepare":
+                pytest.fail("Routine search unexpectedly requested approval")
+            return await super().request(operation, **payload)
+
+    browser = BrowserTools()
+    backend = SearchBrowser()
+    browser.client = backend
+    model = ScriptedLLM(
+        [
+            (
+                "browser_act",
+                {
+                    "action": "fill",
+                    "effect": "browse",
+                    "description": "Enter hoodies",
+                    "destination": {"kind": "css", "value": "#twotabsearchtextbox"},
+                    "value": "hoodies",
+                },
+            ),
+            (
+                "browser_act",
+                {
+                    "action": "press",
+                    "effect": "browse",
+                    "description": "Search hoodies",
+                    "target": {"kind": "css", "value": "#twotabsearchtextbox"},
+                    "value": "Enter",
+                },
+            ),
+            "The search was submitted.",
+        ]
+    )
+    async with AgentSession(llm=model, userdata=browser) as session:
+        agent = Agent(instructions="Use browser tools.", tools=[browser.browser_act])
+        browser.bind(agent, session, [])
+        await session.start(agent)
+        await session.run(user_input="Find hoodies on Amazon.")
+        assert [command["action"] for command in backend.executions] == [
+            "fill",
+            "press",
+        ]
+        assert backend.executions[0]["target"]["value"] == "#twotabsearchtextbox"
+        assert backend.executions[0]["destination"] is None
+        assert browser.approvals.pending is None
+        await browser.close()
+
+
 async def test_observation_cannot_be_used_as_user_approval():
     from livekit.agents.voice.events import ConversationItemAddedEvent
 

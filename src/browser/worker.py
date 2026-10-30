@@ -6,6 +6,7 @@ latency/failures from voice processing; it is deliberately NOT a sandbox.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import contextlib
@@ -224,16 +225,29 @@ class BrowserRuntime:
         kind, value = target.get("kind", "role"), target.get("value", "")
         exact = target.get("exact", True)
         if kind == "role":
-            return scope.get_by_role(
+            locator = scope.get_by_role(
                 value, name=target.get("name") or None, exact=exact
             )
-        if kind == "label":
-            return scope.get_by_label(value, exact=exact)
-        if kind == "text":
-            return scope.get_by_text(value, exact=exact)
-        if kind == "css":
-            return scope.locator(value)
-        raise ValueError("Unknown locator kind")
+        elif kind == "label":
+            locator = scope.get_by_label(value, exact=exact)
+        elif kind == "text":
+            locator = scope.get_by_text(value, exact=exact)
+        elif kind == "css":
+            locator = scope.locator(value)
+        else:
+            raise ValueError("Unknown locator kind")
+        if target.get("has_text"):
+            locator = locator.filter(has_text=target["has_text"])
+        if target.get("href"):
+            # JSON quoting preserves arbitrary URL characters in the CSS string.
+            href = json.dumps(target["href"])
+            locator = locator.and_(scope.locator(f"a[href={href}]"))
+        if target.get("index") is not None:
+            index = target["index"]
+            if not isinstance(index, int) or index < 0:
+                raise ValueError("Match index must be a nonnegative integer.")
+            locator = locator.nth(index)
+        return locator
 
     async def unique(self, page, target: dict):
         locator = self.locator(page, target)
@@ -241,7 +255,7 @@ class BrowserRuntime:
         count = await locator.count()
         if count != 1:
             candidates = await locator.evaluate_all(
-                "els => els.slice(0, 8).map(e => ({tag:e.tagName, text:(e.innerText || e.getAttribute('aria-label') || '').slice(0,120)}))"
+                "els => els.slice(0, 8).map((e,index) => ({index, tag:e.tagName, text:(e.innerText || e.getAttribute('aria-label') || '').slice(0,300), href:e.getAttribute('href')}))"
             )
             raise ValueError(
                 f"Locator matched {count} elements. Refine it using these candidates: {json.dumps(candidates)}"
@@ -304,6 +318,31 @@ class BrowserRuntime:
         if command["kind"] == "script":
             if not command.get("code", "").strip():
                 raise ValueError("Script is empty")
+            tree = ast.parse(
+                "async def run():\n" + textwrap.indent(command["code"], "    ")
+            )
+            body = tree.body[0].body
+            if any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                for node in body
+            ) and all(
+                isinstance(
+                    node,
+                    (
+                        ast.FunctionDef,
+                        ast.AsyncFunctionDef,
+                        ast.Import,
+                        ast.ImportFrom,
+                        ast.Pass,
+                    ),
+                )
+                for node in body
+            ):
+                raise ValueError(
+                    "Script only defines functions and never calls them. Supply an async "
+                    "function body using await directly, or explicitly call your function. "
+                    "For ordinary searches use browser_act fill then press with target."
+                )
             compile(
                 "async def run():\n" + textwrap.indent(command["code"], "    "),
                 "<approved-playwright>",
@@ -574,10 +613,21 @@ class BrowserRuntime:
             target = args.get("target")
             locator = self.locator(page, target) if target else scope.locator("body")
             if mode == "query":
+                if not target:
+                    locator = scope.locator(
+                        "a[href], button, input, select, textarea, [role='link'], [role='button']"
+                    )
                 result["count"] = await locator.count()
                 content = json.dumps(
                     await locator.evaluate_all(
-                        "els => els.slice(0,50).map(e => ({tag:e.tagName, text:(e.innerText || '').slice(0,300), label:e.getAttribute('aria-label')}))"
+                        """els => els.map((e,index) => ({
+                            index, tag:e.tagName,
+                            text:(e.innerText || '').slice(0,600),
+                            label:e.getAttribute('aria-label'),
+                            href:e.getAttribute('href'),
+                            visible:!!(e.getClientRects().length),
+                            context:(e.closest('[data-asin], article, li')?.innerText || '').slice(0,1000)
+                        }))"""
                     )
                 )
             elif mode == "text":

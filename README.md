@@ -77,6 +77,9 @@ lk app env --write --destination .env.local
 
 ## Run the agent
 
+For the Windows voice dashboard, see [Jarvis desktop](desktop/README.md).
+The desktop app launches Python directly and does not require the LiveKit CLI.
+
 The `lk agent console`, `lk agent dev`, and `lk agent debugger` commands run your agent on your own machine. To talk to it in your terminal:
 
 ```console

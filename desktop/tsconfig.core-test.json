@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "module": "CommonJS", "moduleResolution": "Node", "noEmit": false, "outDir": ".test-build", "types": ["node"], "rootDir": "." },
+  "include": ["src/shared.ts", "src/protocol.ts", "src/preferences.ts", "src/renderer/state.ts", "tests/core.test.ts"]
+}

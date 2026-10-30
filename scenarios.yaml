@@ -7,6 +7,38 @@
 # in a scenario to absolute values so it keeps passing months from now.
 name: Starter assistant
 scenarios:
+  - label: Search Amazon without stopping at an intention statement
+    instructions: |
+      PERSONA: A shopper with Amazon already open in the local browser.
+      OPENING LINE: "Find hoodies on Amazon."
+      DO, IN ORDER:
+      1. Wait for the search results to appear.
+      2. If the assistant only announces an intention, ask whether it has searched yet.
+      3. End once it reports results based on an observed search results page.
+    agent_expectations: >
+      Uses structured browser tools to fill the observed search box and submit
+      the search as ordinary browsing. Uses target for the search-box locator.
+      Does not stop after filling or announcing an intention, request approval
+      for a routine search, or fall back to advanced Python after an argument
+      mistake. Inspects the results before claiming the search completed.
+    tags:
+      feature: browser-search
+  - label: Select a specific product from similar shopping results
+    instructions: |
+      PERSONA: A shopper browsing Amazon in the local browser.
+      OPENING LINE: "Open Amazon and search for Sony headphones."
+      DO, IN ORDER:
+      1. Ask: "Open the Sony WH-1000XM5, not the XM4."
+      2. If asked to clarify a variant, choose black.
+      3. End after the requested product detail page is opened.
+    agent_expectations: >
+      Observes the actual search results before choosing. Queries product links
+      when titles are partial or duplicated, uses their observed destinations
+      or match indexes to select the requested model, and verifies the product
+      detail page. Does not invent selectors or click the first ambiguous match.
+      Does not add to cart or purchase anything.
+    tags:
+      feature: browser-product-selection
   - label: Greets and offers help
     instructions: |
       PERSONA: A first-time user who just connected and is curious what this assistant does.

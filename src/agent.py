@@ -1,5 +1,7 @@
 import logging
+import os
 import textwrap
+from pathlib import Path
 
 from dotenv import load_dotenv
 from google.genai import types
@@ -18,7 +20,7 @@ from tools import search_web
 
 logger = logging.getLogger("agent")
 
-load_dotenv(".env.local")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env.local")
 
 
 class Assistant(Agent):
@@ -145,11 +147,25 @@ async def my_agent(ctx: JobContext):
     # Start the session, which initializes the voice pipeline and warms up the models
     assistant = Assistant(browser)
     browser.bind(assistant, session, [search_web])
+    desktop = None
+    if session_id := os.getenv("JARVIS_DESKTOP_SESSION_ID"):
+        from desktop_bridge import DesktopBridge
+
+        if ctx.room.name != os.environ["JARVIS_DESKTOP_ROOM"]:
+            raise ValueError("Desktop worker received a different room.")
+        desktop = DesktopBridge(
+            ctx.room,
+            session,
+            browser,
+            session_id,
+            os.environ["JARVIS_DESKTOP_IDENTITY"],
+        )
+        ctx.add_shutdown_callback(desktop.close)
     await session.start(
         agent=assistant,
         room=ctx.room,
         room_options=room_io.RoomOptions(
-            video_input=True,
+            video_input=desktop is None,
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=ai_coustics.audio_enhancement(
                     model=ai_coustics.EnhancerModel.QUAIL_VF_S
@@ -171,6 +187,18 @@ async def my_agent(ctx: JobContext):
 
     # Join the room and connect to the user
     await ctx.connect()
+    if desktop:
+        await desktop.start()
+
+
+def create_desktop_server() -> AgentServer:
+    desktop_server = AgentServer(
+        host="127.0.0.1", port=0, num_idle_processes=0, shutdown_process_timeout=7
+    )
+    desktop_server.rtc_session(
+        my_agent, agent_name="my-agent", on_simulation_end=on_simulation_end
+    )
+    return desktop_server
 
 
 if __name__ == "__main__":

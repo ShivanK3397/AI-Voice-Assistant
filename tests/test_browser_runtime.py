@@ -86,6 +86,70 @@ async def script(client, code):
 
 
 @pytest.mark.browser
+async def test_function_only_script_is_rejected_before_review(browser):
+    client, _ = browser
+    with pytest.raises(BrowserError, match="only defines functions"):
+        await client.request(
+            "prepare",
+            command={
+                "kind": "script",
+                "code": "async def script(page):\n    await page.fill('#name', 'hoodies')",
+            },
+        )
+    assert await script(client, "return await page.title()")
+
+
+@pytest.mark.browser
+async def test_product_links_can_be_disambiguated_by_observed_destination(browser):
+    import json
+
+    client, _ = browser
+    await script(
+        client,
+        """await page.set_content('''
+        <article data-asin="xm4"><a href="#xm4">Sony headphones</a>WH-1000XM4</article>
+        <article data-asin="xm5"><a href="#xm5">Sony headphones</a>WH-1000XM5 Black</article>
+        ''')
+return {}""",
+    )
+    target = {"kind": "role", "value": "link", "name": "Sony headphones"}
+    observed = await client.request("observe", mode="query", target=target)
+    matches = json.loads(observed["content"])
+    assert matches[1]["href"] == "#xm5"
+    assert "WH-1000XM5 Black" in matches[1]["context"]
+    assert matches[1]["index"] == 1
+    with pytest.raises(BrowserError, match="matched 2"):
+        await client.request("act", command={"action": "click", "target": target})
+    selected = {**target, "href": matches[1]["href"]}
+    await client.request("act", command={"action": "click", "target": selected})
+    state = await client.request("tabs", action="list")
+    assert "#xm5" in str(state)
+
+
+@pytest.mark.browser
+async def test_query_exposes_all_controls_and_explicit_match_index(browser):
+    import json
+
+    client, _ = browser
+    await script(
+        client,
+        """await page.set_content('<a href="#one">Item</a><a href="#two">Item</a>')
+return {}""",
+    )
+    observed = await client.request("observe", mode="query")
+    assert len(json.loads(observed["content"])) == 2
+    await client.request(
+        "act",
+        command={
+            "action": "click",
+            "target": {"kind": "role", "value": "link", "name": "Item", "index": 1},
+        },
+    )
+    state = await client.request("tabs", action="list")
+    assert "#two" in str(state)
+
+
+@pytest.mark.browser
 async def test_prepare_does_not_submit_and_execute_is_single_use(browser):
     client, site = browser
     await client.request(

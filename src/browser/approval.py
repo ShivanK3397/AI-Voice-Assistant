@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -30,6 +31,11 @@ class ApprovalState:
         self.latest_message: str | None = None
         self.seen_messages: set[str] = set()
         self.pending: PendingAction | None = None
+        self.on_change: Callable[[], None] | None = None
+
+    def changed(self) -> None:
+        if self.on_change:
+            self.on_change()
 
     def observe_user_message(self, message_id: str) -> None:
         if message_id not in self.seen_messages:
@@ -40,6 +46,7 @@ class ApprovalState:
         self.pending = PendingAction(
             uuid4().hex, copy.deepcopy(command), description, self.latest_message
         )
+        self.changed()
         return self.pending
 
     def delivered(self, action_id: str, *, interrupted: bool, failed: bool) -> bool:
@@ -51,6 +58,7 @@ class ApprovalState:
             return False
         pending.delivered = True
         pending.reviewed_message = self.latest_message
+        self.changed()
         return True
 
     def consume(self, action_id: str) -> dict:
@@ -67,7 +75,24 @@ class ApprovalState:
         ):
             raise ApprovalError("Wait for a later user message approving this action.")
         self.pending = None  # Consume before I/O: an uncertain write is never replayed.
+        self.changed()
+        return copy.deepcopy(pending.command)
+
+    def consume_ui(self, action_id: str) -> dict:
+        """Only the authenticated desktop RPC handler may call this method."""
+        pending = self.pending
+        if not pending or pending.id != action_id:
+            raise ApprovalError("No matching pending action. Review it again.")
+        if not pending.delivered:
+            raise ApprovalError("The review has not finished being delivered.")
+        if self.latest_message != pending.reviewed_message:
+            raise ApprovalError(
+                "A new user message arrived. Resolve it before approving."
+            )
+        self.pending = None
+        self.changed()
         return copy.deepcopy(pending.command)
 
     def cancel(self) -> None:
         self.pending = None
+        self.changed()

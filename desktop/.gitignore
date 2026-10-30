@@ -1,0 +1,9 @@
+node_modules/
+.vite/
+out/
+test-results/
+playwright-report/
+coverage/
+.npm-cache/
+.verification/
+.test-build/
