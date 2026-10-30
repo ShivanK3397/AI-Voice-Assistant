@@ -13,6 +13,26 @@ KMS
 .cache/
 .browser/
 
+# Local credentials and private key material
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local tool caches and generated artifacts
+desktop/.npm-cache/
+desktop/.vite/
+desktop/.test-build/
+desktop/.verification/
+desktop/out/
+desktop/test-results/
+desktop/playwright-report/
+desktop/coverage/
+desktop/node_modules/
+
+# Browser and Windows cache data created by local tooling
+src/%SystemDrive%/
+
 # Claude Code
 .claude/settings.local.json
 .claude/worktrees/
