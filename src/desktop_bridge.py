@@ -22,6 +22,7 @@ class DesktopBridge:
         self.transcripts: dict[str, dict] = {}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.publisher: asyncio.Task | None = None
+        self.participant = None
         browser.event_sink = self.emit
         browser.approvals.on_change = self.approval_changed
         self.listeners = {
@@ -33,12 +34,11 @@ class DesktopBridge:
         }
         for name, callback in self.listeners.items():
             session.on(name, callback)
-        for method, handler in {
+        self.rpc_methods = {
             "jarvis.getSnapshot": self.snapshot_rpc,
             "jarvis.resolveApproval": self.approval_rpc,
             "jarvis.stopTask": self.stop_rpc,
-        }.items():
-            room.local_participant.register_rpc_method(method, handler)
+        }
 
     def approval(self):
         pending = self.browser.approvals.pending
@@ -167,13 +167,16 @@ class DesktopBridge:
         return json.dumps(await self.browser.stop_task())
 
     async def start(self):
+        self.participant = self.room.local_participant
+        for method, handler in self.rpc_methods.items():
+            self.participant.register_rpc_method(method, handler)
         self.publisher = asyncio.create_task(self.publish())
         self.state = self.session.agent_state
         self.emit(
             "session.ready",
             {
                 "state": self.state,
-                "agentIdentity": self.room.local_participant.identity,
+                "agentIdentity": self.participant.identity,
             },
         )
 
@@ -182,7 +185,7 @@ class DesktopBridge:
             envelope = await self.queue.get()
             # A subsequent authenticated snapshot repairs missed events.
             with contextlib.suppress(Exception):
-                await self.room.local_participant.send_text(
+                await self.participant.send_text(
                     json.dumps(envelope),
                     topic=TOPIC,
                     destination_identities=[self.identity],
@@ -193,12 +196,9 @@ class DesktopBridge:
         self.browser.approvals.on_change = None
         for name, callback in self.listeners.items():
             self.session.off(name, callback)
-        for method in (
-            "jarvis.getSnapshot",
-            "jarvis.resolveApproval",
-            "jarvis.stopTask",
-        ):
-            self.room.local_participant.unregister_rpc_method(method)
+        if self.participant:
+            for method in self.rpc_methods:
+                self.participant.unregister_rpc_method(method)
         if self.publisher:
             self.publisher.cancel()
             with contextlib.suppress(asyncio.CancelledError):

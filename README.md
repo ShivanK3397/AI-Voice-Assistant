@@ -77,8 +77,26 @@ lk app env --write --destination .env.local
 
 ## Run the agent
 
-For the Windows voice dashboard, see [Jarvis desktop](desktop/README.md).
-The desktop app launches Python directly and does not require the LiveKit CLI.
+### Start the Windows desktop app
+
+From PowerShell, install the Python and Electron dependencies once, then start
+the app in development mode:
+
+```powershell
+cd my-agent
+uv sync
+uv run playwright install chromium
+cd desktop
+npm install
+npm run dev
+```
+
+Run these commands from the cloned repository's parent directory. If you are
+already in the repository, omit `cd my-agent`. Set `LIVEKIT_URL`,
+`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `GOOGLE_API_KEY` in `.env.local`
+at the repository root before launching. The desktop app starts the Python
+agent directly and does not require the LiveKit CLI. For a packaged Windows
+build and more details, see [Jarvis desktop](desktop/README.md).
 
 The `lk agent console`, `lk agent dev`, and `lk agent debugger` commands run your agent on your own machine. To talk to it in your terminal:
 

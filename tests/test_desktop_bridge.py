@@ -74,6 +74,7 @@ def fixture():
 
 async def test_desktop_rpc_requires_owner_and_does_not_allow_replay():
     bridge, _, browser = fixture()
+    await bridge.start()
     browser.approvals.observe_user_message("request")
     pending = browser.approvals.prepare({"ticket": "worker"}, "Read title")
     browser.approvals.delivered(pending.id, interrupted=False, failed=False)
@@ -125,6 +126,31 @@ async def test_provider_recovery_requires_activity_not_state_transition():
     assert bridge.state == "recovering"
     bridge.transcribed(SimpleNamespace(transcript="Hello"))
     assert bridge.state == "listening"
+    await bridge.close()
+
+
+async def test_rpc_registration_waits_until_room_is_connected():
+    participant, browser, session = LocalParticipant(), Browser(), Session()
+
+    class Room:
+        connected = False
+
+        @property
+        def local_participant(self):
+            if not self.connected:
+                raise RuntimeError("cannot access local participant before connecting")
+            return participant
+
+    room = Room()
+    bridge = DesktopBridge(room, session, browser, "session", "owner")
+    assert not participant.methods
+    room.connected = True
+    await bridge.start()
+    assert set(participant.methods) == {
+        "jarvis.getSnapshot",
+        "jarvis.resolveApproval",
+        "jarvis.stopTask",
+    }
     await bridge.close()
 
 
